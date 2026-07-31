@@ -3,22 +3,507 @@
 <head>
   <meta charset="UTF-8">
   <title>The Mind's Sushi Restaurant</title>
-  <!-- Load p5.js library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
   <style>
     body {
       margin: 0;
       padding: 0;
-      background-color: #161218;
+      background-color: #121014;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
+      font-family: sans-serif;
     }
   </style>
 </head>
 <body>
-  <!-- Link your game script -->
-  <script src="sketch.js"></script>
+  <script>
+    let brainChef;
+    let customer;
+    let plates = [];
+    let trackProgressOffset = 0;
+
+    let flexibilityScore = 50;
+    let energyMeter = 40;
+
+    let modeSelectScreen = true;
+    let customThoughts = [];
+    let inputField, submitButton, randomModeButton;
+    let inGameInputField, inGameSubmitButton;
+    let btnInspect, btnFightPush, btnLetGo;
+    let lastSpawnTime = -300;
+
+    let canvasSize = 600;
+    let trackCenterX;
+    let trackCenterY;
+    let trackRadiusX = 210;
+    let trackRadiusY = 95;
+    let maxThoughtsOnTrack = 4;
+
+    function setup() {
+      createCanvas(canvasSize, canvasSize);
+      
+      trackCenterX = width / 2;
+      trackCenterY = height / 2 - 10;
+
+      brainChef = new BrainChef(trackCenterX, trackCenterY - trackRadiusY - 45);
+      customer = new Customer(trackCenterX, trackCenterY + trackRadiusY + 45);
+
+      createMenuUI();
+      createInGameUI();
+      createActionButtonsUI();
+    }
+
+    function draw() {
+      if (modeSelectScreen) {
+        drawModeSelectionScreen();
+        return;
+      }
+
+      if (frameCount % 45 === 0) {
+        energyMeter = min(100, energyMeter + 0.5);
+      }
+
+      drawCleanRestaurantInterior();
+      drawOvalTrack();
+      drawUI();
+
+      if (frameCount - lastSpawnTime > 320 && plates.length < maxThoughtsOnTrack) {
+        plates.push(new ThoughtPlate(getRandomThought(), getRandomSushi(), 0.75)); 
+        lastSpawnTime = frameCount;
+      }
+
+      brainChef.update();
+      brainChef.show();
+
+      customer.update();
+      customer.show();
+
+      for (let i = plates.length - 1; i >= 0; i--) {
+        plates[i].update();
+        plates[i].show();
+        if (plates[i].isFinished()) {
+          plates.splice(i, 1);
+        }
+      }
+    }
+
+    function mousePressed() {
+      if (modeSelectScreen) return;
+      
+      for (let i = plates.length - 1; i >= 0; i--) {
+        if (plates[i].isClicked()) {
+          if (customer.selectedThought === null) {
+            customer.pickThought(plates[i]);
+            plates.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+
+    function keyPressed() {
+      if (modeSelectScreen) return;
+
+      if (key === 'i' || key === 'I') {
+        actionInspectNearest();
+      } else if (key === 'f' || key === 'F' || key === 'p' || key === 'P') {
+        actionFightPush();
+      } else if (key === 'l' || key === 'L') {
+        actionLetGo();
+      }
+    }
+
+    function actionInspectNearest() {
+      if (customer.selectedThought !== null) return;
+      let closestPlate = null;
+      let closestDist = 9999;
+      
+      for (let p of plates) {
+        let d = dist(p.x, p.y, customer.x, customer.y);
+        if (d < closestDist) {
+          closestDist = d;
+          closestPlate = p;
+        }
+      }
+
+      if (closestPlate && closestDist < 160) {
+        customer.pickThought(closestPlate);
+        let index = plates.indexOf(closestPlate);
+        if (index > -1) plates.splice(index, 1);
+      }
+    }
+
+    function actionFightPush() {
+      flexibilityScore = max(0, flexibilityScore - 8);
+      energyMeter = max(0, energyMeter - 12);
+      customer.triggerFightPushAnimation();
+      
+      if (customer.selectedThought !== null) {
+        customer.selectedThought.reverseDirection();
+        plates.push(customer.selectedThought);
+        customer.selectedThought = null;
+      } else if (plates.length > 0) {
+        let closestIndex = 0;
+        let closestDist = 9999;
+        for (let i = 0; i < plates.length; i++) {
+          let d = dist(plates[i].x, plates[i].y, customer.x, customer.y);
+          if (d < closestDist) {
+            closestDist = d;
+            closestIndex = i;
+          }
+        }
+        if (closestDist < 180) {
+          plates[closestIndex].reverseDirection();
+        }
+      }
+    }
+
+    function actionLetGo() {
+      flexibilityScore = min(100, flexibilityScore + 3);
+      customer.triggerLetGoAnimation();
+
+      if (customer.selectedThought !== null) {
+        customer.selectedThought.resumeDirection();
+        plates.push(customer.selectedThought);
+        customer.selectedThought = null;
+      }
+    }
+
+    function createMenuUI() {
+      inputField = createInput('');
+      inputField.attribute('placeholder', 'Type your personal thought...');
+      inputField.size(260, 30);
+      inputField.position(windowWidth / 2 - 130, windowHeight / 2 + 30);
+      
+      submitButton = createButton('Start Game');
+      submitButton.size(130, 34);
+      submitButton.position(windowWidth / 2 - 65, windowHeight / 2 + 75);
+      submitButton.mousePressed(addCustomThoughtAndStart);
+
+      randomModeButton = createButton('Use Default Thoughts');
+      randomModeButton.size(200, 34);
+      randomModeButton.position(windowWidth / 2 - 100, windowHeight / 2 + 120);
+      randomModeButton.mousePressed(startRandomMode);
+
+      inputField.show();
+      submitButton.show();
+      randomModeButton.show();
+    }
+
+    function createInGameUI() {
+      inGameInputField = createInput('');
+      inGameInputField.attribute('placeholder', 'Add new thought...');
+      inGameInputField.size(140, 24);
+      inGameInputField.position(windowWidth / 2 - 190, windowHeight / 2 + 252);
+      inGameInputField.hide();
+
+      inGameSubmitButton = createButton('Add Now');
+      inGameSubmitButton.size(75, 26);
+      inGameSubmitButton.position(windowWidth / 2 - 42, windowHeight / 2 + 251);
+      inGameSubmitButton.mousePressed(addInGameThought);
+      inGameSubmitButton.hide();
+    }
+
+    function createActionButtonsUI() {
+      btnInspect = createButton('[I] Inspect');
+      btnInspect.size(85, 26);
+      btnInspect.position(windowWidth / 2 - 130, windowHeight / 2 + 285);
+      btnInspect.mousePressed(actionInspectNearest);
+      btnInspect.hide();
+
+      btnFightPush = createButton('[F] Fight');
+      btnFightPush.size(85, 26);
+      btnFightPush.position(windowWidth / 2 - 42, windowHeight / 2 + 285);
+      btnFightPush.mousePressed(actionFightPush);
+      btnFightPush.hide();
+
+      btnLetGo = createButton('[L] Let Go');
+      btnLetGo.size(85, 26);
+      btnLetGo.position(windowWidth / 2 + 46, windowHeight / 2 + 285);
+      btnLetGo.mousePressed(actionLetGo);
+      btnLetGo.hide();
+    }
+
+    function addCustomThoughtAndStart() {
+      let val = inputField.value().trim();
+      if (val.length > 0) {
+        customThoughts.push(val);
+      }
+      inputField.value('');
+      modeSelectScreen = false;
+      hideMenuUI();
+    }
+
+    function startRandomMode() {
+      modeSelectScreen = false;
+      hideMenuUI();
+    }
+
+    function addInGameThought() {
+      let val = inGameInputField.value().trim();
+      if (val.length > 0) {
+        customThoughts.push(val);
+        // Spawn immediately onto the track starting at the Brain Chef (progress 0.75)
+        plates.push(new ThoughtPlate("'" + val + "'", getRandomSushi(), 0.75));
+        inGameInputField.value('');
+      }
+    }
+
+    function hideMenuUI() {
+      if (inputField) inputField.hide();
+      if (submitButton) submitButton.hide();
+      if (randomModeButton) randomModeButton.hide();
+      if (inGameInputField) inGameInputField.show();
+      if (inGameSubmitButton) inGameSubmitButton.show();
+      if (btnInspect) btnInspect.show();
+      if (btnFightPush) btnFightPush.show();
+      if (btnLetGo) btnLetGo.show();
+    }
+
+    function drawModeSelectionScreen() {
+      background(20, 18, 22);
+
+      fill(28, 24, 30);
+      stroke(50, 42, 52);
+      strokeWeight(2);
+      rect(width / 2 - 260, 35, 520, 530, 12);
+
+      noStroke();
+      fill(255, 225, 195);
+      textSize(17);
+      textAlign(CENTER, TOP);
+      text("🍣 THE MIND'S SUSHI RESTAURANT 🍣", width / 2, 55);
+
+      textSize(11.5);
+      fill(185, 195, 215);
+      text("Thoughts flow slowly from the Brain Chef.\nInspect, Fight [F], or Let Go [L].\nYour energy restores automatically.", width / 2, 95);
+
+      textSize(12);
+      fill(255, 185, 100);
+      text("Enter a personal thought to spawn immediately:", width / 2, 175);
+    }
+
+    function drawCleanRestaurantInterior() {
+      background(24, 20, 25);
+
+      // Clean minimalist sushi counter background wallpaper lines
+      stroke(34, 28, 35);
+      strokeWeight(1);
+      for (let y = 0; y < height; y += 40) {
+        line(0, y, width, y);
+      }
+
+      // Warm wooden center table floor inside oval track
+      noStroke();
+      fill(32, 26, 30);
+      ellipse(trackCenterX, trackCenterY, trackRadiusX * 1.55, trackRadiusY * 1.55);
+    }
+
+    function drawOvalTrack() {
+      noFill();
+      stroke(15, 12, 15);
+      strokeWeight(36);
+      ellipse(trackCenterX, trackCenterY, trackRadiusX * 2, trackRadiusY * 2);
+
+      noFill();
+      stroke(45, 35, 42);
+      strokeWeight(28);
+      ellipse(trackCenterX, trackCenterY, trackRadiusX * 2, trackRadiusY * 2);
+
+      noFill();
+      stroke(22, 18, 22);
+      strokeWeight(20);
+      ellipse(trackCenterX, trackCenterY, trackRadiusX * 2, trackRadiusY * 2);
+
+      trackProgressOffset += 0.0006;
+      stroke(55, 42, 50);
+      strokeWeight(2);
+      for (let a = 0; a < TWO_PI; a += QUARTER_PI) {
+        let t = a + trackProgressOffset;
+        let x1 = trackCenterX + cos(t) * (trackRadiusX - 9);
+        let y1 = trackCenterY + sin(t) * (trackRadiusY - 9);
+        let x2 = trackCenterX + cos(t) * (trackRadiusX + 9);
+        let y2 = trackCenterY + sin(t) * (trackRadiusY + 9);
+        line(x1, y1, x2, y2);
+      }
+    }
+
+    function drawUI() {
+      // Clean Top HUD Bar (No overlapping text)
+      fill(16, 14, 18, 245);
+      noStroke();
+      rect(0, 0, width, 36);
+
+      fill(255);
+      textSize(11);
+      textStyle(BOLD);
+      textAlign(LEFT, CENTER);
+      text("🍣 SUSHI RESTAURANT", 15, 18);
+      textStyle(NORMAL);
+
+      // Flexibility Bar
+      text("Flex:", 190, 18);
+      fill(40, 40, 48);
+      rect(225, 12, 65, 13, 5);
+      fill(90, 215, 150);
+      rect(225, 12, map(flexibilityScore, 0, 100, 0, 65), 13, 5);
+
+      // Energy Bar
+      fill(255);
+      text("Energy:", 310, 18);
+      fill(40, 40, 48);
+      rect(360, 12, 65, 13, 5);
+      fill(235, 175, 75);
+      rect(360, 12, map(energyMeter, 0, 100, 0, 65), 13, 5);
+    }
+
+    class BrainChef {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.animTimer = 0;
+      }
+      update() { this.animTimer += 0.03; }
+      show() {
+        noStroke();
+        fill(255);
+        rectMode(CENTER);
+        rect(this.x, this.y - 22, 28, 14, 3);
+        rect(this.x, this.y - 30, 20, 9, 3);
+        fill(255, 160, 180);
+        ellipse(this.x, this.y - 4, 42, 30);
+      }
+    }
+
+    class Customer {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.selectedThought = null;
+        this.timer = 0;
+        this.actionAnimTimer = 0;
+        this.actionType = "";
+      }
+      pickThought(plate) {
+        this.selectedThought = plate;
+        this.timer = 240;
+      }
+      triggerFightPushAnimation() {
+        this.actionAnimTimer = 22;
+        this.actionType = "FIGHT!";
+      }
+      triggerLetGoAnimation() {
+        this.actionAnimTimer = 22;
+        this.actionType = "LET GO";
+      }
+      update() {
+        if (this.selectedThought !== null) {
+          this.timer--;
+          if (this.timer <= 0) this.selectedThought = null;
+        }
+        if (this.actionAnimTimer > 0) this.actionAnimTimer--;
+      }
+      show() {
+        noStroke();
+        if (this.actionAnimTimer > 0) {
+          fill(255, 110, 130, 190);
+          ellipse(this.x, this.y - 20, 42, 26);
+          fill(255);
+          textSize(9);
+          textStyle(BOLD);
+          textAlign(CENTER, CENTER);
+          text(this.actionType, this.x, this.y - 20);
+          textStyle(NORMAL);
+        }
+        fill(235, 200, 175);
+        ellipse(this.x, this.y - 6, 18, 18);
+        fill(65, 100, 150);
+        rectMode(CENTER);
+        rect(this.x, this.y + 10, 24, 20, 4);
+
+        if (this.selectedThought !== null) {
+          fill(245, 248, 255);
+          stroke(160, 180, 205);
+          strokeWeight(1);
+          rect(this.x, this.y - 36, 130, 22, 4);
+          noStroke();
+          fill(20, 25, 35);
+          textSize(10);
+          textStyle(BOLD);
+          textAlign(CENTER, CENTER);
+          text(this.selectedThought.sushiType + " " + this.selectedThought.label, this.x, this.y - 36);
+          textStyle(NORMAL);
+        }
+      }
+    }
+
+    class ThoughtPlate {
+      constructor(label, sushiType, progress) {
+        this.progress = progress;
+        this.speed = 0.0012;
+        this.label = label;
+        this.sushiType = sushiType;
+        this.w = 120;
+        this.h = 22;
+        this.updateCoordinates();
+      }
+      updateCoordinates() {
+        let angle = this.progress * TWO_PI;
+        this.x = trackCenterX + cos(angle) * trackRadiusX;
+        this.y = trackCenterY + sin(angle) * trackRadiusY;
+      }
+      update() {
+        this.progress += this.speed;
+        this.updateCoordinates();
+      }
+      reverseDirection() { this.speed = -0.002; }
+      resumeDirection() { this.speed = 0.0012; }
+      show() {
+        fill(245, 248, 255);
+        stroke(155, 175, 200);
+        strokeWeight(1);
+        ellipse(this.x, this.y, this.w + 5, this.h + 3);
+        fill(228, 236, 248);
+        rectMode(CENTER);
+        rect(this.x, this.y, this.w, this.h, 4);
+        noStroke();
+        fill(22, 28, 38);
+        textSize(10);
+        textStyle(BOLD);
+        textAlign(CENTER, CENTER);
+        text(this.sushiType + " " + this.label, this.x, this.y);
+        textStyle(NORMAL);
+      }
+      isClicked() {
+        let d = dist(mouseX, mouseY, this.x, this.y);
+        return (d < this.w / 2);
+      }
+      isFinished() { return false; }
+    }
+
+    function getRandomThought() {
+      if (customThoughts.length > 0 && random() < 0.5) {
+        return "'" + random(customThoughts) + "'";
+      } else {
+        let allThoughtsPool = [
+          "'I am falling behind'",
+          "'Everyone is judging me'",
+          "'I can't handle this'",
+          "'What if I mess up?'",
+          "'The floor is wooden'",
+          "'It is 3 o clock'",
+          "'I need water'",
+          "'My chair is comfy'"
+        ];
+        return random(allThoughtsPool);
+      }
+    }
+
+    function getRandomSushi() {
+      return random(["🍣", "🍤", "🍱", "🍥", "🍙", "🍵", "🍡"]);
+    }
+  </script>
 </body>
 </html>

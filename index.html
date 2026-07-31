@@ -15,6 +15,14 @@
       height: 100vh;
       font-family: sans-serif;
     }
+    canvas {
+      display: block;
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
   </style>
 </head>
 <body>
@@ -34,25 +42,31 @@
     let btnInspect, btnFightPush, btnLetGo;
     let lastSpawnTime = -300;
 
-    let canvasSize = 600;
+    let canvasWidth = 800;
+    let canvasHeight = 600;
     let trackCenterX;
     let trackCenterY;
-    let trackRadiusX = 210;
-    let trackRadiusY = 95;
+    let trackRadiusX = 240;
+    let trackRadiusY = 100;
     let maxThoughtsOnTrack = 4;
 
     function setup() {
-      createCanvas(canvasSize, canvasSize);
+      createCanvas(canvasWidth, canvasHeight);
       
       trackCenterX = width / 2;
-      trackCenterY = height / 2 - 10;
+      trackCenterY = height / 2 + 10;
 
-      brainChef = new BrainChef(trackCenterX, trackCenterY - trackRadiusY - 45);
-      customer = new Customer(trackCenterX, trackCenterY + trackRadiusY + 45);
+      brainChef = new BrainChef(trackCenterX, trackCenterY - trackRadiusY - 50);
+      customer = new Customer(trackCenterX, trackCenterY + trackRadiusY + 50);
 
       createMenuUI();
       createInGameUI();
       createActionButtonsUI();
+    }
+
+    function windowResized() {
+      // Keep internal canvas resolution constant for precise coordinate mapping,
+      // CSS object-fit/width/height scales it seamlessly across any display size.
     }
 
     function draw() {
@@ -65,7 +79,7 @@
         energyMeter = min(100, energyMeter + 0.5);
       }
 
-      drawCleanRestaurantInterior();
+      drawSimpleRestaurantBackground();
       drawOvalTrack();
       drawUI();
 
@@ -174,17 +188,17 @@
     function createMenuUI() {
       inputField = createInput('');
       inputField.attribute('placeholder', 'Type your personal thought...');
-      inputField.size(260, 30);
-      inputField.position(windowWidth / 2 - 130, windowHeight / 2 + 30);
+      inputField.size(280, 32);
+      inputField.position(windowWidth / 2 - 140, windowHeight / 2 - 10);
       
       submitButton = createButton('Start Game');
-      submitButton.size(130, 34);
-      submitButton.position(windowWidth / 2 - 65, windowHeight / 2 + 75);
+      submitButton.size(140, 36);
+      submitButton.position(windowWidth / 2 - 70, windowHeight / 2 + 35);
       submitButton.mousePressed(addCustomThoughtAndStart);
 
       randomModeButton = createButton('Use Default Thoughts');
-      randomModeButton.size(200, 34);
-      randomModeButton.position(windowWidth / 2 - 100, windowHeight / 2 + 120);
+      randomModeButton.size(210, 36);
+      randomModeButton.position(windowWidth / 2 - 105, windowHeight / 2 + 82);
       randomModeButton.mousePressed(startRandomMode);
 
       inputField.show();
@@ -194,34 +208,34 @@
 
     function createInGameUI() {
       inGameInputField = createInput('');
-      inGameInputField.attribute('placeholder', 'Add new thought...');
-      inGameInputField.size(140, 24);
-      inGameInputField.position(windowWidth / 2 - 190, windowHeight / 2 + 252);
+      inGameInputField.attribute('placeholder', 'Type a thought...');
+      inGameInputField.size(150, 26);
+      inGameInputField.position(windowWidth / 2 - 160, windowHeight / 2 + 235);
       inGameInputField.hide();
 
-      inGameSubmitButton = createButton('Add Now');
-      inGameSubmitButton.size(75, 26);
-      inGameSubmitButton.position(windowWidth / 2 - 42, windowHeight / 2 + 251);
+      inGameSubmitButton = createButton('Add & Spawn');
+      inGameSubmitButton.size(100, 28);
+      inGameSubmitButton.position(windowWidth / 2 + 5, windowHeight / 2 + 234);
       inGameSubmitButton.mousePressed(addInGameThought);
       inGameSubmitButton.hide();
     }
 
     function createActionButtonsUI() {
       btnInspect = createButton('[I] Inspect');
-      btnInspect.size(85, 26);
-      btnInspect.position(windowWidth / 2 - 130, windowHeight / 2 + 285);
+      btnInspect.size(90, 28);
+      btnInspect.position(windowWidth / 2 - 140, windowHeight / 2 + 272);
       btnInspect.mousePressed(actionInspectNearest);
       btnInspect.hide();
 
       btnFightPush = createButton('[F] Fight');
-      btnFightPush.size(85, 26);
-      btnFightPush.position(windowWidth / 2 - 42, windowHeight / 2 + 285);
+      btnFightPush.size(90, 28);
+      btnFightPush.position(windowWidth / 2 - 45, windowHeight / 2 + 272);
       btnFightPush.mousePressed(actionFightPush);
       btnFightPush.hide();
 
       btnLetGo = createButton('[L] Let Go');
-      btnLetGo.size(85, 26);
-      btnLetGo.position(windowWidth / 2 + 46, windowHeight / 2 + 285);
+      btnLetGo.size(90, 28);
+      btnLetGo.position(windowWidth / 2 + 50, windowHeight / 2 + 272);
       btnLetGo.mousePressed(actionLetGo);
       btnLetGo.hide();
     }
@@ -245,7 +259,7 @@
       let val = inGameInputField.value().trim();
       if (val.length > 0) {
         customThoughts.push(val);
-        // Spawn immediately onto the track starting at the Brain Chef (progress 0.75)
+        // Spawn immediately onto the track at the Brain Chef position (progress 0.75)
         plates.push(new ThoughtPlate("'" + val + "'", getRandomSushi(), 0.75));
         inGameInputField.value('');
       }
@@ -263,52 +277,53 @@
     }
 
     function drawModeSelectionScreen() {
-      background(20, 18, 22);
+      background(18, 15, 20);
 
-      fill(28, 24, 30);
+      fill(26, 22, 28);
       stroke(50, 42, 52);
       strokeWeight(2);
-      rect(width / 2 - 260, 35, 520, 530, 12);
+      rect(width / 2 - 280, 70, 560, 460, 12);
 
       noStroke();
       fill(255, 225, 195);
-      textSize(17);
+      textSize(18);
       textAlign(CENTER, TOP);
-      text("🍣 THE MIND'S SUSHI RESTAURANT 🍣", width / 2, 55);
-
-      textSize(11.5);
-      fill(185, 195, 215);
-      text("Thoughts flow slowly from the Brain Chef.\nInspect, Fight [F], or Let Go [L].\nYour energy restores automatically.", width / 2, 95);
+      text("🍣 THE MIND'S SUSHI RESTAURANT 🍣", width / 2, 95);
 
       textSize(12);
+      fill(185, 195, 215);
+      text("Thoughts flow slowly from the Brain Chef.\nInspect, Fight [F], or Let Go [L].\nYour energy restores automatically.", width / 2, 138);
+
+      textSize(13);
       fill(255, 185, 100);
-      text("Enter a personal thought to spawn immediately:", width / 2, 175);
+      text("Enter a personal thought to begin:", width / 2, 215);
     }
 
-    function drawCleanRestaurantInterior() {
-      background(24, 20, 25);
+    function drawSimpleRestaurantBackground() {
+      // Cozy, clean restaurant wood panel background
+      background(30, 24, 28);
 
-      // Clean minimalist sushi counter background wallpaper lines
-      stroke(34, 28, 35);
+      // Simple horizontal wooden planks/lines
+      stroke(38, 30, 35);
       strokeWeight(1);
-      for (let y = 0; y < height; y += 40) {
+      for (let y = 0; y < height; y += 50) {
         line(0, y, width, y);
       }
 
-      // Warm wooden center table floor inside oval track
+      // Warm central table floor inside the sushi belt track
       noStroke();
-      fill(32, 26, 30);
+      fill(22, 18, 22);
       ellipse(trackCenterX, trackCenterY, trackRadiusX * 1.55, trackRadiusY * 1.55);
     }
 
     function drawOvalTrack() {
       noFill();
       stroke(15, 12, 15);
-      strokeWeight(36);
+      strokeWeight(38);
       ellipse(trackCenterX, trackCenterY, trackRadiusX * 2, trackRadiusY * 2);
 
       noFill();
-      stroke(45, 35, 42);
+      stroke(52, 40, 48);
       strokeWeight(28);
       ellipse(trackCenterX, trackCenterY, trackRadiusX * 2, trackRadiusY * 2);
 
@@ -318,7 +333,7 @@
       ellipse(trackCenterX, trackCenterY, trackRadiusX * 2, trackRadiusY * 2);
 
       trackProgressOffset += 0.0006;
-      stroke(55, 42, 50);
+      stroke(65, 50, 60);
       strokeWeight(2);
       for (let a = 0; a < TWO_PI; a += QUARTER_PI) {
         let t = a + trackProgressOffset;
@@ -331,32 +346,32 @@
     }
 
     function drawUI() {
-      // Clean Top HUD Bar (No overlapping text)
-      fill(16, 14, 18, 245);
+      // Clean, well-spaced top status HUD bar
+      fill(16, 13, 16, 245);
       noStroke();
-      rect(0, 0, width, 36);
+      rect(0, 0, width, 45);
 
       fill(255);
-      textSize(11);
+      textSize(12);
       textStyle(BOLD);
       textAlign(LEFT, CENTER);
-      text("🍣 SUSHI RESTAURANT", 15, 18);
+      text("🍣 SUSHI RESTAURANT", 25, 22);
       textStyle(NORMAL);
 
       // Flexibility Bar
-      text("Flex:", 190, 18);
+      text("Flex:", 220, 22);
       fill(40, 40, 48);
-      rect(225, 12, 65, 13, 5);
+      rect(260, 15, 90, 14, 5);
       fill(90, 215, 150);
-      rect(225, 12, map(flexibilityScore, 0, 100, 0, 65), 13, 5);
+      rect(260, 15, map(flexibilityScore, 0, 100, 0, 90), 14, 5);
 
       // Energy Bar
       fill(255);
-      text("Energy:", 310, 18);
+      text("Energy:", 385, 22);
       fill(40, 40, 48);
-      rect(360, 12, 65, 13, 5);
+      rect(435, 15, 90, 14, 5);
       fill(235, 175, 75);
-      rect(360, 12, map(energyMeter, 0, 100, 0, 65), 13, 5);
+      rect(435, 15, map(energyMeter, 0, 100, 0, 90), 14, 5);
     }
 
     class BrainChef {
